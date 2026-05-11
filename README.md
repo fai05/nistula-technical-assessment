@@ -166,31 +166,6 @@ Complaints are always escalated even if Claude successfully drafts a reply becau
 
 ---
 
-## Action Logic
-
-The `action` field is derived from the score:
-
-| Condition | Action |
-| --- | --- |
-| Complaint | `escalate` |
-| `confidence_score > 0.85` | `auto_send` |
-| `0.60 <= confidence_score <= 0.85` | `agent_review` |
-| `confidence_score < 0.60` | `escalate` |
-
-Example response:
-
-```json
-{
-  "message_id": "uuid",
-  "query_type": "pre_sales_availability",
-  "drafted_reply": "Hi Rahul, great news...",
-  "confidence_score": 0.91,
-  "action": "auto_send"
-}
-```
-
----
-
 ## Error Handling
 
 The backend handles errors in the following ways:
