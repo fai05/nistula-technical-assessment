@@ -2,9 +2,9 @@
 
 The project is divided into three parts:
 
-1. **Part 1:** Guest Message Handler using FastAPI and Claude API  
-2. **Part 2:** PostgreSQL database schema for the unified messaging platform  
-3. **Part 3:** Written thinking response for a real guest complaint scenario  
+1. **Part 1:** Guest Message Handler using FastAPI and Claude API
+2. **Part 2:** PostgreSQL database schema for the unified messaging platform
+3. **Part 3:** Written thinking response for a real guest complaint scenario
 
 ---
 
@@ -28,7 +28,7 @@ This project builds a backend system that:
 
 ```text
 nistula-technical-assessment/
-│
+|
 ├── app/
 │   ├── main.py
 │   ├── models.py
@@ -36,7 +36,7 @@ nistula-technical-assessment/
 │   ├── claude_client.py
 │   ├── confidence.py
 │   └── property_context.py
-│
+|
 ├── schema.sql
 ├── thinking.md
 ├── .env.example
@@ -138,26 +138,56 @@ http://127.0.0.1:8001/docs
 
 ## Confidence Scoring Logic
 
-The confidence score is calculated by the backend after Claude generates the drafted reply.
+The endpoint returns `confidence_score` as a number between `0` and `1`. Claude is responsible only for drafting the guest-facing message. The backend calculates the confidence score using deterministic rules so the logic is transparent, explainable, and does not simply return `1.0` whenever a reply is generated.
 
-Claude is responsible only for drafting the guest-facing message. The backend calculates the confidence score using deterministic rules so that the logic is transparent and explainable.
+Scoring starts from the classified query type:
 
-The confidence score considers:
+| Query type | Base score | Reason |
+| --- | ---: | --- |
+| `post_sales_checkin` | `0.76` | Usually answerable from property context. |
+| `pre_sales_availability` | `0.74` | Usually answerable when dates/property are clear. |
+| `pre_sales_pricing` | `0.72` | Answerable, but pricing can need review if complex. |
+| `special_request` | `0.63` | Often needs operational confirmation. |
+| `general_enquiry` | `0.58` | Intent is less specific. |
+| `complaint` | `0.45` | Always needs human escalation. |
 
-- Query type risk
-- Whether Claude successfully returned a reply
-- Whether the property ID is present
-- Whether the booking reference is present
-- Message length and clarity
-- Number of matching intent keywords
-- Whether the message contains mixed intents
-- Uncertainty terms such as “maybe”, “not sure” or “if possible”
-- High-risk terms such as “refund”, “broken”, “unsafe” or “emergency”
-- Whether the message is a complaint
+The score is then adjusted using these signals:
 
-Different query types start with different base confidence scores. For example, check-in and availability questions are usually easier to answer from the property context, while special requests and general enquiries may require agent review.
+- `+0.08` if Claude successfully drafts a reply, `-0.30` if the fallback reply is used.
+- `+0.04` when `property_id` is present, `-0.08` when missing.
+- Booking-related messages (`post_sales_checkin`, `special_request`, `complaint`) get `+0.04` when `booking_ref` is present and `-0.04` when missing.
+- Very short messages lose confidence because they are harder to interpret.
+- Messages with keywords matching the classified query type gain confidence.
+- Messages with multiple intent groups, uncertainty terms, several questions, or high-risk wording lose confidence.
+- Complaints are capped at `0.55`.
+- Non-complaint messages are capped at `0.95`, so the service avoids overconfident `1.0` scores.
 
 Complaints are always escalated even if Claude successfully drafts a reply because guest dissatisfaction should be reviewed by a human.
+
+---
+
+## Action Logic
+
+The `action` field is derived from the score:
+
+| Condition | Action |
+| --- | --- |
+| Complaint | `escalate` |
+| `confidence_score > 0.85` | `auto_send` |
+| `0.60 <= confidence_score <= 0.85` | `agent_review` |
+| `confidence_score < 0.60` | `escalate` |
+
+Example response:
+
+```json
+{
+  "message_id": "uuid",
+  "query_type": "pre_sales_availability",
+  "drafted_reply": "Hi Rahul, great news...",
+  "confidence_score": 0.91,
+  "action": "auto_send"
+}
+```
 
 ---
 
@@ -171,4 +201,3 @@ The backend handles errors in the following ways:
 - Confidence score is reduced if Claude does not respond successfully.
 - Complaints are always escalated for human review.
 
----
